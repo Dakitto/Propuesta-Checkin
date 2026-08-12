@@ -1,8 +1,6 @@
 export type Config = {
   siteName: string;
   backgroundImage: string;
-  username: string;
-  password: string;
 };
 
 export type Counselor = {
@@ -29,5 +27,6 @@ export type Checkin = {
 
 export type SessionData = {
   username: string;
+  role: "admin" | "checker";
   loggedInAt: string;
 };

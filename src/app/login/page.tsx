@@ -30,10 +30,10 @@ export default function LoginPage() {
     }
   }, [hydrated, isAuthenticated, nextPath, router]);
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    const success = login(username.trim(), password);
+    const success = await login(username.trim(), password);
 
     if (!success) {
       setError("Credenciales inválidas. Verifica tu usuario y contraseña.");
@@ -102,9 +102,8 @@ export default function LoginPage() {
         </form>
 
         <div className="mt-8 rounded-2xl bg-slate-50 px-4 py-4 text-sm text-slate-500">
-          <p className="font-medium text-slate-700">Credenciales por defecto</p>
-          <p className="mt-1">Usuario: admin</p>
-          <p>Contraseña: checkin2024</p>
+          <p className="font-medium text-slate-700">Credenciales</p>
+          <p className="mt-1">Solicita tus credenciales al administrador del portal.</p>
         </div>
       </section>
     </main>

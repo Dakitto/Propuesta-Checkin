@@ -1,36 +1,89 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Propuesta Check-In
 
-## Getting Started
+Portal de check-in para consejeros con persistencia en Supabase (Postgres) y despliegue en Vercel.
 
-First, run the development server:
+## Requisitos
+
+- Node.js 20+
+- Proyecto de Supabase
+- (Opcional) cuenta en Vercel para deploy
+
+## Configuracion de base de datos (Supabase/Postgres)
+
+1. Crea un proyecto en Supabase.
+2. Abre SQL Editor y ejecuta el script [supabase/schema.sql](supabase/schema.sql).
+3. En Supabase, copia:
+	- `Project URL`
+	- `service_role` key (Settings > API)
+
+## Variables de entorno
+
+Crea `.env.local` en la raiz:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+SUPABASE_URL=https://TU-PROYECTO.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=TU_SERVICE_ROLE_KEY
+AUTH_SESSION_SECRET=CAMBIA_ESTE_SECRETO
+AUTH_ADMIN_USERNAME=admin
+AUTH_ADMIN_PASSWORD=CAMBIA_ESTA_CLAVE_ADMIN
+AUTH_CHECKER_USERNAME=chequeador
+AUTH_CHECKER_PASSWORD=chequeador2026
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Desarrollo local
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm install
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Abre `http://localhost:3000`.
 
-## Learn More
+## Deploy en Vercel
 
-To learn more about Next.js, take a look at the following resources:
+1. Importa el repositorio en Vercel.
+2. En `Settings > Environment Variables`, agrega:
+	- `SUPABASE_URL`
+	- `SUPABASE_SERVICE_ROLE_KEY`
+3. Redeploy.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Persistencia actual
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+La app guarda en Supabase:
 
-## Deploy on Vercel
+- Configuracion (`app_config`)
+- Consejeros (`counselors`)
+- Eventos (`events`)
+- Check-ins (`checkins`)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+La sesion de login usa cookie segura `httpOnly` (sin exponer contraseña de admin en UI).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Roles de acceso
+
+- `admin`: acceso completo (`/checkin`, `/dashboard`, `/admin`).
+- `checker` (normal): acceso solo a `/checkin`.
+
+Credencial por defecto para usuario normal:
+
+- Usuario: `chequeador`
+- Clave: `chequeador2026`
+
+La clave de admin no se muestra en el login y se configura por variable de entorno:
+
+- `AUTH_ADMIN_PASSWORD`
+
+## Seguridad (RLS)
+
+El script [supabase/schema.sql](supabase/schema.sql) deja activado Row Level Security en todas las tablas y bloquea acceso directo para `anon` y `authenticated`.
+
+- El acceso de la app ocurre por el backend (`/api/portal`) usando `SUPABASE_SERVICE_ROLE_KEY`.
+- Si ya habias ejecutado una version anterior del script, vuelve a correr el archivo completo para aplicar `enable row level security`, `revoke` y policies.
+
+## Nota de migracion de schema
+
+La tabla `app_config` ya no usa columnas `username` ni `password`. Si tu base fue creada con una version anterior, puedes quitarlas opcionalmente:
+
+```sql
+alter table app_config drop column if exists username;
+alter table app_config drop column if exists password;
+```

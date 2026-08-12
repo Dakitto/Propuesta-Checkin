@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Building2, Check, ClipboardCheck, Phone, Search, Users } from "lucide-react";
 
 import { EmptyState } from "@/components/empty-state";
@@ -8,10 +8,22 @@ import { usePortal } from "@/components/portal-provider";
 import { formatDate, getUniqueCounselorCount, normalize } from "@/lib/utils";
 
 export default function CheckinPage() {
-  const { config, counselors, events, checkins, toggleCheckin, markChurchCheckins } = usePortal();
+  const { config, counselors, events, checkins, toggleCheckin, markChurchCheckins, addCounselor } =
+    usePortal();
   const [selectedEventId, setSelectedEventId] = useState("");
   const [search, setSearch] = useState("");
   const [churchFilter, setChurchFilter] = useState("all");
+  const [churchFilterInput, setChurchFilterInput] = useState("Todas las iglesias");
+  const [showAddCounselorForm, setShowAddCounselorForm] = useState(false);
+  const [counselorForm, setCounselorForm] = useState({
+    nombre: "",
+    telefono: "",
+    edad: "",
+    churchMode: "existing" as "existing" | "new",
+    churchExisting: "",
+    churchNew: "",
+  });
+  const [manualCounselorFeedback, setManualCounselorFeedback] = useState("");
 
   useEffect(() => {
     if (!events.length) {
@@ -28,6 +40,32 @@ export default function CheckinPage() {
     () => Array.from(new Set(counselors.map((counselor) => counselor.iglesia))).filter(Boolean).sort(),
     [counselors],
   );
+
+  useEffect(() => {
+    setCounselorForm((previous) => {
+      if (!churches.length) {
+        return {
+          ...previous,
+          churchMode: "new",
+          churchExisting: "",
+        };
+      }
+
+      return {
+        ...previous,
+        churchExisting: previous.churchExisting || churches[0],
+      };
+    });
+  }, [churches]);
+
+  useEffect(() => {
+    if (churchFilter === "all") {
+      setChurchFilterInput("Todas las iglesias");
+      return;
+    }
+
+    setChurchFilterInput(churchFilter);
+  }, [churchFilter]);
 
   const filteredCounselors = useMemo(() => {
     const normalizedSearch = normalize(search);
@@ -58,6 +96,59 @@ export default function CheckinPage() {
         backgroundImage:
           "linear-gradient(135deg, rgba(49, 46, 129, 0.95), rgba(37, 99, 235, 0.88))",
       };
+
+  const handleAddCounselor = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const nombre = counselorForm.nombre.trim();
+    const telefono = counselorForm.telefono.trim();
+    const edadRaw = counselorForm.edad.trim();
+    const iglesia =
+      counselorForm.churchMode === "existing"
+        ? counselorForm.churchExisting.trim()
+        : counselorForm.churchNew.trim();
+
+    if (!nombre) {
+      setManualCounselorFeedback("Escribe el nombre del consejero.");
+      return;
+    }
+
+    if (!iglesia) {
+      setManualCounselorFeedback("Selecciona una iglesia existente o escribe una nueva.");
+      return;
+    }
+
+    const parsedAge = edadRaw ? Number.parseInt(edadRaw, 10) : null;
+    if (parsedAge !== null && Number.isNaN(parsedAge)) {
+      setManualCounselorFeedback("La edad debe ser un número válido.");
+      return;
+    }
+
+    try {
+      await addCounselor({
+        nombre,
+        telefono,
+        iglesia,
+        edad: parsedAge,
+      });
+    } catch (error) {
+      setManualCounselorFeedback(
+        error instanceof Error ? error.message : "No se pudo agregar el consejero.",
+      );
+      return;
+    }
+
+    setCounselorForm((previous) => ({
+      ...previous,
+      nombre: "",
+      telefono: "",
+      edad: "",
+      churchExisting: churches.includes(iglesia) ? iglesia : previous.churchExisting,
+      churchNew: "",
+      churchMode: churches.includes(iglesia) ? "existing" : "new",
+    }));
+    setManualCounselorFeedback(`Consejero "${nombre}" agregado correctamente.`);
+  };
 
   return (
     <main className="space-y-6">
@@ -122,18 +213,33 @@ export default function CheckinPage() {
 
         <label className="block">
           <span className="mb-2 block text-sm font-medium text-slate-700">Filtrar por iglesia</span>
-          <select
-            value={churchFilter}
-            onChange={(event) => setChurchFilter(event.target.value)}
-            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
-          >
-            <option value="all">Todas las iglesias</option>
-            {churches.map((church) => (
-              <option key={church} value={church}>
-                {church}
-              </option>
-            ))}
-          </select>
+          <div className="space-y-2">
+            <input
+              list="church-filter-list"
+              value={churchFilterInput}
+              onChange={(event) => {
+                const value = event.target.value;
+                setChurchFilterInput(value);
+
+                if (!value || value === "Todas las iglesias") {
+                  setChurchFilter("all");
+                  return;
+                }
+
+                const matchedChurch = churches.find((church) => church === value);
+                setChurchFilter(matchedChurch ?? "all");
+              }}
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
+              placeholder="Escribe para buscar iglesia"
+            />
+            <datalist id="church-filter-list">
+              <option value="Todas las iglesias" />
+              {churches.map((church) => (
+                <option key={church} value={church} />
+              ))}
+            </datalist>
+            <p className="text-xs text-slate-500">Escribe y elige una iglesia de la lista para filtrar.</p>
+          </div>
         </label>
       </section>
 
@@ -145,13 +251,167 @@ export default function CheckinPage() {
           </div>
           <button
             type="button"
-            onClick={() => markChurchCheckins(churchFilter, selectedEventId)}
+            onClick={async () => {
+              try {
+                await markChurchCheckins(churchFilter, selectedEventId);
+              } catch (error) {
+                setManualCounselorFeedback(
+                  error instanceof Error
+                    ? error.message
+                    : "No se pudo completar la acción masiva de check-in.",
+                );
+              }
+            }}
             className="rounded-full bg-indigo-600 px-4 py-2 font-semibold text-white transition hover:bg-indigo-500"
           >
             Marcar todos de esta iglesia
           </button>
         </section>
       ) : null}
+
+      <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex flex-col gap-1">
+            <h3 className="text-xl font-semibold text-slate-900">Agregar consejero manualmente</h3>
+            <p className="text-sm text-slate-500">
+              Si no aparece en la lista, regístralo aquí y quedará disponible para check-in.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowAddCounselorForm((previous) => !previous)}
+            className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
+          >
+            {showAddCounselorForm ? "Ocultar formulario" : "Añadir nuevo consejero"}
+          </button>
+        </div>
+
+        {showAddCounselorForm ? (
+          <form onSubmit={handleAddCounselor} className="mt-5 grid gap-4 lg:grid-cols-2">
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-slate-700">Nombre</span>
+            <input
+              value={counselorForm.nombre}
+              onChange={(event) =>
+                setCounselorForm((previous) => ({ ...previous, nombre: event.target.value }))
+              }
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
+              placeholder="Nombre completo"
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-slate-700">Teléfono</span>
+            <input
+              value={counselorForm.telefono}
+              onChange={(event) =>
+                setCounselorForm((previous) => ({ ...previous, telefono: event.target.value }))
+              }
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
+              placeholder="Ej. 3001234567"
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-slate-700">Edad (opcional)</span>
+            <input
+              value={counselorForm.edad}
+              onChange={(event) =>
+                setCounselorForm((previous) => ({ ...previous, edad: event.target.value }))
+              }
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
+              placeholder="Ej. 28"
+            />
+          </label>
+
+          <fieldset className="space-y-3">
+            <legend className="mb-2 text-sm font-medium text-slate-700">Iglesia</legend>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setCounselorForm((previous) => ({
+                    ...previous,
+                    churchMode: "existing",
+                    churchExisting: previous.churchExisting || churches[0] || "",
+                  }))
+                }
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                  counselorForm.churchMode === "existing"
+                    ? "bg-indigo-600 text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                Elegir existente
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setCounselorForm((previous) => ({
+                    ...previous,
+                    churchMode: "new",
+                  }))
+                }
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                  counselorForm.churchMode === "new"
+                    ? "bg-indigo-600 text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                Escribir nueva
+              </button>
+            </div>
+
+            {counselorForm.churchMode === "existing" ? (
+              <div className="space-y-2">
+                <input
+                  list="existing-churches-list"
+                  value={counselorForm.churchExisting}
+                  onChange={(event) =>
+                    setCounselorForm((previous) => ({ ...previous, churchExisting: event.target.value }))
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
+                  placeholder="Escribe para buscar iglesia"
+                />
+                <datalist id="existing-churches-list">
+                  {churches.map((church) => (
+                    <option key={church} value={church} />
+                  ))}
+                </datalist>
+                <p className="text-xs text-slate-500">
+                  Escribe el nombre para filtrar sugerencias y selecciona la iglesia correcta.
+                </p>
+              </div>
+            ) : (
+              <input
+                value={counselorForm.churchNew}
+                onChange={(event) =>
+                  setCounselorForm((previous) => ({ ...previous, churchNew: event.target.value }))
+                }
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
+                placeholder="Nombre de la iglesia"
+              />
+            )}
+          </fieldset>
+
+          <div className="flex items-end lg:col-span-2">
+            <button
+              type="submit"
+              className="rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-500"
+            >
+              Agregar consejero
+            </button>
+          </div>
+          </form>
+        ) : null}
+
+        {manualCounselorFeedback ? (
+          <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            {manualCounselorFeedback}
+          </p>
+        ) : null}
+      </section>
 
       {!events.length ? (
         <EmptyState
@@ -212,7 +472,15 @@ export default function CheckinPage() {
                   <button
                     type="button"
                     disabled={!selectedEventId}
-                    onClick={() => toggleCheckin(counselor.id, selectedEventId)}
+                    onClick={async () => {
+                      try {
+                        await toggleCheckin(counselor.id, selectedEventId);
+                      } catch (error) {
+                        setManualCounselorFeedback(
+                          error instanceof Error ? error.message : "No se pudo guardar el check-in.",
+                        );
+                      }
+                    }}
                     className={`mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition ${
                       isCheckedIn
                         ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"

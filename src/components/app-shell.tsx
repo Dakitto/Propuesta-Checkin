@@ -15,10 +15,15 @@ const navigationItems = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { config, logout } = usePortal();
+  const { config, logout, session } = usePortal();
 
-  const handleLogout = () => {
-    logout();
+  const visibleNavigationItems =
+    session?.role === "checker"
+      ? navigationItems.filter((item) => item.href === "/checkin")
+      : navigationItems;
+
+  const handleLogout = async () => {
+    await logout();
     router.replace("/login");
   };
 
@@ -34,7 +39,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {navigationItems.map(({ href, label, icon: Icon }) => {
+            {visibleNavigationItems.map(({ href, label, icon: Icon }) => {
               const isActive = pathname === href;
 
               return (
